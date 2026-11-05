@@ -15,7 +15,6 @@ import json
 import logging
 import math
 import re
-import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -106,7 +105,6 @@ class AircraftTypes:
         self.path = Path(path)
         self.types = {}  # code -> {"name", "shape", "engines"}
         self.loaded_at = 0
-        self.lock = threading.Lock()
 
     def load_cached(self):
         if self.path.exists():

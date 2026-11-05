@@ -74,7 +74,6 @@ class App:
     def state(self, trail):
         s = self.tracker.state(trail)
         s["autostart"] = integration.autostart_enabled()
-        s["settings"].pop("_installed", None)
         return s
 
     # ---- window ----

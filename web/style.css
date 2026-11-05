@@ -185,7 +185,6 @@ output { font-weight: 600; }
   box-shadow: none; padding: 1px 5px; font-size: 11px; font-weight: 600;
 }
 .plane-label::before { display: none; }
-#map.zooming .plane-icon { transition: none; }
 body.picking #map { cursor: crosshair; }
 .banner {
   position: absolute; top: 12px; left: calc(var(--sidebar) + 50%); transform: translateX(-50%);

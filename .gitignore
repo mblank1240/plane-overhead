@@ -3,7 +3,4 @@ __pycache__/
 *.pyc
 build/
 dist/
-data/
-*.spec
 *.log
-.venv-broken/

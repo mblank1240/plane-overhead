@@ -6,7 +6,7 @@ import sys
 import zlib
 from pathlib import Path
 
-HERE = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 BLUE = (37, 99, 235)
 WHITE = (255, 255, 255)
 
@@ -86,7 +86,7 @@ def ico(images):
 
 
 if __name__ == "__main__":
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else HERE / "assets"
+    out = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "assets"
     out.mkdir(exist_ok=True)
     images = [(s, render(s, 2 if s >= 128 else 4)) for s in (256, 48, 32, 16)]
     (out / "icon.ico").write_bytes(ico(images))

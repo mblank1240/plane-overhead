@@ -317,13 +317,10 @@ class Tracker:
             "flight": (ac.get("flight") or "").strip(),
             "reg": registration(ac),
             "type": type_code,
-            "desc": ac.get("desc") or "",
-            "type_name": ((custom or {}).get("name") or (info or {}).get("name")
-                          or (ac.get("desc") or "").title()),
+            "type_name": (custom or {}).get("name") or (info or {}).get("name") or "",
             "custom_type": custom,
             "shape": shape,
             "operator": ac.get("ownOp") or "",
-            "category": category,
             "squawk": ac.get("squawk") or "",
             "lat": ac["lat"],
             "lon": ac["lon"],
@@ -463,7 +460,6 @@ class Tracker:
             "type": p["type"],
             "title": title,
             "body": body,
-            "eta": now + p["pass"]["t"] if kind == "overhead" else None,
         }
         self.alerts_store.value = ([alert] + self.alerts_store.value)[:200]
         self.alerts_store.save()

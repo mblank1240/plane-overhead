@@ -45,8 +45,6 @@ L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19,
   attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · flight data <a href="https://adsb.lol">adsb.lol</a>',
 }).addTo(map);
-map.on("zoomstart", () => $("#map").classList.add("zooming"));
-map.on("zoomend", () => $("#map").classList.remove("zooming"));
 map.on("dragstart", () => { followSelected = false; });
 
 const homeMarker = L.marker([0, 0], {
@@ -326,7 +324,6 @@ function renderDetail() {
   }
   // Don't wipe the naming form while you're typing in it; just keep the map paths moving.
   if (namingHex === p.hex && card.querySelector("#name-form")) { drawPaths(p); return; }
-  const s = state.settings;
   const fav = state.favorites.find((f) => f.id === p.favorite);
   const pass = p.pass;
   const land = p.landing;

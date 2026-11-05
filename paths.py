@@ -1,7 +1,6 @@
 """Where the app's bundled files and per-user data live on each OS."""
 
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -25,12 +24,6 @@ def data_dir():
         base = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
         d = base / "plane-overhead"
     d.mkdir(parents=True, exist_ok=True)
-    # Carry over settings from the first version, which kept them next to the code.
-    old = SOURCE_DIR / "data"
-    if not FROZEN and old.is_dir() and not (d / "settings.json").exists():
-        for name in ("settings.json", "favorites.json", "alerts.json"):
-            if (old / name).exists():
-                shutil.copy2(old / name, d / name)
     return d
 
 

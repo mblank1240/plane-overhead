@@ -30,7 +30,11 @@ off or come into range.
 | `notify.py` | Cross-platform notifications (desktop-notifier, with fallbacks) |
 | `integration.py` | Start-at-login and launcher menu entries per OS |
 | `paths.py` | Per-OS data dir and resource paths |
-| `make_icon.py` | Generates `assets/icon.png` / `icon.ico` with stdlib only |
+| `datasets.py` | Downloads/caches aircraft types and OurAirports airports + runways |
+| `routes.py` | Flight origin/destination lookup by callsign (adsb.im) |
+| `plane-overhead.spec` | PyInstaller one-folder build for all three OSes |
+| `.github/workflows/build.yml` | CI builds; a `v*` tag publishes a GitHub Release |
+| `tools/make_icon.py` | Generates `assets/icon.png` / `icon.ico` with stdlib only |
 | `web/` | Map UI: `index.html`, `style.css`, `app.js` |
 
 Dependencies (from the surviving venv): `pywebview`, `pystray`, `Pillow`, `desktop-notifier`
@@ -88,8 +92,10 @@ Rules going forward:
 - [x] Rebuilt `.venv` on Windows (old one moved to `.venv-broken`); app verified running
 
 ### Next
-- [ ] Draw the route (origin -> destination) on the map for the selected flight
 - [ ] Run the app on Windows from source and confirm Defender/SentinelOne leave it alone
 - [ ] Windows Start Menu entry via a signed installer (not PowerShell)
-- [ ] Packaging per OS (signed builds), one-dir PyInstaller at most
+- [x] PyInstaller spec + GitHub Actions builds (Windows x64, macOS arm64, Linux x64), unsigned.
+      Build in CI only, never on the dev PC (that's what triggered the AV before).
+- [ ] Code signing (Windows: Azure Trusted Signing; macOS: Developer ID + notarization)
+- [ ] Intel Mac build; native window on Linux (currently opens in the browser)
 - [ ] Tune landing thresholds with real-world observation (see "Skipped alert" log lines)
