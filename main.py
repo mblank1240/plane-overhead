@@ -48,11 +48,13 @@ def ask_running_app(path, body=None):
 
 class App:
     def __init__(self):
+        from datasets import Datasets
         from notify import Notifier
         from tracker import Tracker
 
-        self.notifier = Notifier()
-        self.tracker = Tracker(data_dir(), on_alert=self.notify_alert)
+        self.notifier = Notifier(fallback=self.tray_notification)
+        self.datasets = Datasets(data_dir())
+        self.tracker = Tracker(data_dir(), on_alert=self.notify_alert, datasets=self.datasets)
         self.window_proc = None
         self.commands = []        # [{"id", "hex"}] for the open window
         self.command_id = 0
@@ -61,12 +63,8 @@ class App:
         self.stopped = threading.Event()
         self.server = make_server(self)
 
-        store = self.tracker.settings_store
-        if not store.value.get("_installed"):
-            # First run: start at login by default, like the first version did.
-            self.set_autostart(True)
-            store.value["_installed"] = True
-            store.save()
+        # Start-at-login is opt-in (Settings or tray menu). Turning it on silently at first
+        # launch looked like malware persistence to antivirus, so the app never does that.
         threading.Thread(target=integration.register_launcher, daemon=True).start()
 
     # ---- state for the UI ----
@@ -99,6 +97,11 @@ class App:
     def notify_alert(self, alert, sound):
         self.notifier.show(alert["title"], alert["body"],
                            on_click=lambda: self.open_window(alert["hex"]), sound=sound)
+
+    def tray_notification(self, title, body):
+        """Last-resort notification through the tray icon (balloon on Windows)."""
+        if self.tray and getattr(self.tray, "HAS_NOTIFICATION", False):
+            self.tray.notify(body, title)
 
     def test_notification(self):
         self.notifier.show("✈ Test: N12345 (C172) overhead in 3:00",
@@ -151,6 +154,7 @@ class App:
     # ---- main loop ----
 
     def run(self, open_window):
+        threading.Thread(target=self.datasets.run_forever, daemon=True, name="datasets").start()
         threading.Thread(target=self.tracker.run_forever, daemon=True, name="tracker").start()
         threading.Thread(target=self.server.serve_forever, daemon=True, name="server").start()
         log.info("%s running at %s", APP_NAME, BASE_URL)

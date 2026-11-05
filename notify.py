@@ -3,11 +3,13 @@
 Uses desktop-notifier (WinRT toasts on Windows, Notification Center on macOS,
 D-Bus on Linux), which runs on an asyncio loop in its own thread. If it can't
 be used, falls back to a plain notification with no click action.
+
+No PowerShell or other script hosts are spawned: hidden PowerShell launched by an
+unsigned app is a classic malware pattern and got the project quarantined.
 """
 
 import asyncio
 import logging
-import os
 import subprocess
 import sys
 import threading
@@ -18,7 +20,9 @@ log = logging.getLogger("notify")
 
 
 class Notifier:
-    def __init__(self):
+    def __init__(self, fallback=None):
+        """fallback(title, body) shows a notification some other way (the tray icon)."""
+        self.fallback = fallback
         self.loop = asyncio.new_event_loop()
         threading.Thread(target=self.loop.run_forever, daemon=True, name="notify").start()
         self.native = None
@@ -42,7 +46,7 @@ class Notifier:
             fut = asyncio.run_coroutine_threadsafe(self._send(title, body, on_click, sound), self.loop)
             fut.add_done_callback(lambda f: f.exception() and self._fallback(title, body, f.exception()))
         else:
-            threading.Thread(target=basic_notification, args=(title, body, sound), daemon=True).start()
+            threading.Thread(target=self._basic, args=(title, body, sound), daemon=True).start()
 
     async def _send(self, title, body, on_click, sound):
         from desktop_notifier import DEFAULT_SOUND, Button
@@ -52,14 +56,21 @@ class Notifier:
 
     def _fallback(self, title, body, err):
         log.warning("Notification failed (%s); using basic notification", err)
-        basic_notification(title, body, True)
+        self._basic(title, body, True)
+
+    def _basic(self, title, body, sound):
+        if sys.platform == "win32":
+            if self.fallback:
+                self.fallback(title, body)
+            else:
+                log.warning("No notification method available: %s", title)
+            return
+        basic_notification(title, body, sound)
 
 
 def basic_notification(title, body, sound=True):
     try:
-        if sys.platform == "win32":
-            _windows_toast(title, body, sound)
-        elif sys.platform == "darwin":
+        if sys.platform == "darwin":
             script = f"display notification {_as_str(body)} with title {_as_str(title)}"
             if sound:
                 script += ' sound name "Glass"'
@@ -73,23 +84,3 @@ def basic_notification(title, body, sound=True):
 def _as_str(s):
     return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
-
-def _xml(s):
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
-
-
-def _windows_toast(title, body, sound):
-    audio = '<audio src="ms-winsoundevent:Notification.Reminder"/>' if sound else '<audio silent="true"/>'
-    xml = (f'<toast><visual><binding template="ToastGeneric"><text>{_xml(title)}</text>'
-           f'<text>{_xml(body)}</text></binding></visual>{audio}</toast>')
-    ps = (
-        "[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null;"
-        "[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType=WindowsRuntime] | Out-Null;"
-        "$x = New-Object Windows.Data.Xml.Dom.XmlDocument; $x.LoadXml($env:PO_XML);"
-        "$id = '{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}\\WindowsPowerShell\\v1.0\\powershell.exe';"
-        "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier($id)"
-        ".Show([Windows.UI.Notifications.ToastNotification]::new($x))"
-    )
-    subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
-                   env={**os.environ, "PO_XML": xml}, check=False,
-                   creationflags=subprocess.CREATE_NO_WINDOW)

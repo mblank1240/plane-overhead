@@ -1,7 +1,26 @@
 "use strict";
 
 const API_HEADERS = { "Content-Type": "application/json", "X-Plane-Overhead": "1" };
-const PLANE_PATH = "M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z";
+// Map marker shapes on a 24x24 grid, nose up. `shape` comes from the tracker
+// (aircraft type database, falling back to the ADS-B category).
+const SHAPES = {
+  jet: { scale: 1, body: '<path d="M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z" transform="translate(.5 0)"/>' },
+  heavy: { scale: 1.25, body: '<path d="M12 .5c-.9 0-1.6.9-1.6 2v6.3L.5 14.6v2.2l9.9-2.9v5.6l-2.7 2v1.9l4.3-1.1 4.3 1.1v-1.9l-2.7-2v-5.6l9.9 2.9v-2.2l-9.9-5.8V2.5c0-1.1-.7-2-1.6-2z"/><path d="M5.6 12.4h1.5v2.8H5.6zM16.9 12.4h1.5v2.8h-1.5z"/>' },
+  bizjet: { scale: 0.9, body: '<path d="M12 2.5c-.6 0-1 .6-1 1.4V10l-6.5 3.8v1.5l6.5-1.6v4.2l-2.2 1.5v1.3l3.2-.7 3.2.7v-1.3L13 17.9v-4.2l6.5 1.6v-1.5L13 10V3.9c0-.8-.4-1.4-1-1.4z"/><path d="M9.2 14.6h1.6v3H9.2zM13.2 14.6h1.6v3h-1.6z"/>' },
+  turboprop: { scale: 0.95, body: '<path d="M11 2.8c0-.7.4-1.3 1-1.3s1 .6 1 1.3V8.5h9.5v2.3L13 12v6.2l3 1.3v1.6l-4-.8-4 .8v-1.6l3-1.3V12l-9.5-1.2V8.5H11z"/><path d="M5.5 6h1.8v5.5H5.5zM16.7 6h1.8v5.5h-1.8z"/>' },
+  light: { scale: 0.8, body: '<path d="M11.1 3.6h1.8v3.6H22v2.4l-9.1.7v7.4h3.6v2.1H7.5v-2.1h3.6v-7.4l-9.1-.7V7.2h9.1z"/><path d="M8.5 2.4h7v1.2h-7z"/>' },
+  heli: { scale: 0.95, body: '<circle cx="12" cy="10" r="9.3" fill="none" stroke="currentColor" stroke-width="1.3" opacity=".6"/><path d="M12 5.5a3.2 3.2 0 0 1 3.2 3.2v3.6a3.2 3.2 0 0 1-2.2 3V21h2.4v1.6H8.6V21H11v-5.7a3.2 3.2 0 0 1-2.2-3V8.7A3.2 3.2 0 0 1 12 5.5z"/>' },
+  fighter: { scale: 0.95, body: '<path d="M12 1l1.3 4.5.4 4.5 8.3 7.5v2l-8.2-2.6-.4 2.6 2.6 1.9V23L12 22l-4 1v-1.6l2.6-1.9-.4-2.6L2 19.5v-2L10.3 10l.4-4.5z"/>' },
+  glider: { scale: 0.95, body: '<path d="M11.4 4h1.2v7h10.9v1.6l-10.9.6V19l3 .5v1.4H8.4v-1.4l3-.5v-5.8L.5 12.6V11h10.9z"/>' },
+  balloon: { scale: 0.85, fixed: true, body: '<circle cx="12" cy="9.5" r="7.5"/><path d="M9.5 17.5h5l-1 2.5h-3z"/><rect x="10.3" y="20.3" width="3.4" height="2.7" rx=".5"/>' },
+  drone: { scale: 0.75, body: '<path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4"/><circle cx="6" cy="6" r="3.2"/><circle cx="18" cy="6" r="3.2"/><circle cx="6" cy="18" r="3.2"/><circle cx="18" cy="18" r="3.2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/>' },
+  ground: { scale: 0.8, body: '<rect x="8" y="5" width="8" height="14" rx="2"/>' },
+};
+const SHAPE_NAMES = {
+  jet: "Airliner", heavy: "Wide-body / heavy", bizjet: "Business or regional jet", turboprop: "Twin prop / turboprop",
+  light: "Light single-engine", heli: "Helicopter", fighter: "Military jet", glider: "Glider / ultralight",
+  balloon: "Balloon / airship", drone: "Drone", ground: "Ground vehicle",
+};
 const MI_TO_M = 1609.344;
 const $ = (sel) => document.querySelector(sel);
 
@@ -37,6 +56,7 @@ const favCircle = L.circle([0, 0], { radius: 1, color: "#d97706", weight: 1, das
 const trailLine = L.polyline([], { color: "#2563eb", weight: 3, opacity: 0.8, interactive: false }).addTo(map);
 const futureLine = L.polyline([], { color: "#2563eb", weight: 2, dashArray: "4 8", opacity: 0.9, interactive: false }).addTo(map);
 const cpaMarker = L.circleMarker([0, 0], { radius: 6, color: "#dc2626", weight: 2, fillOpacity: 0.3 });
+const airportMarker = L.circleMarker([0, 0], { radius: 8, color: "#2563eb", weight: 2, fillOpacity: 0.15 });
 
 map.on("click", (e) => {
   if (picking) return finishPick(e.latlng);
@@ -87,10 +107,12 @@ function planeColor(p) {
 }
 
 function planeIcon(p) {
-  const size = p.on_ground ? 16 : p.hex === selectedHex || p.candidate || p.favorite ? 30 : 22;
-  const color = planeColor(p);
-  const html = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" style="transform:rotate(${p.track || 0}deg)">
-    <path d="${PLANE_PATH}" style="fill:${color};stroke:var(--surface);stroke-width:1"/></svg>`;
+  const shape = SHAPES[p.shape] || SHAPES.jet;
+  const base = p.on_ground ? 16 : p.hex === selectedHex || p.candidate || p.favorite ? 30 : 22;
+  const size = Math.round(base * shape.scale);
+  const turn = shape.fixed ? 0 : p.track || 0;
+  const html = `<svg width="${size}" height="${size}" viewBox="0 0 24 24" style="color:${planeColor(p)};transform:rotate(${turn}deg)">
+    <g fill="currentColor" stroke="var(--surface)" stroke-width="0.8">${shape.body}</g></svg>`;
   return L.divIcon({ className: "plane-icon", html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] });
 }
 
@@ -169,7 +191,7 @@ function renderMarkers() {
   const seen = new Set();
   for (const p of state.aircraft) {
     seen.add(p.hex);
-    const key = `${planeColor(p)}|${Math.round(p.track || 0)}|${p.on_ground}|${p.candidate}|${p.favorite}|${p.hex === selectedHex}`;
+    const key = `${planeColor(p)}|${p.shape}|${Math.round(p.track || 0)}|${p.on_ground}|${p.candidate}|${p.favorite}|${p.hex === selectedHex}`;
     let m = markers.get(p.hex);
     if (!m) {
       const marker = L.marker(livePos(p), { icon: planeIcon(p), keyboard: false })
@@ -246,7 +268,8 @@ function renderLists() {
   $("#nearby").innerHTML = low.length
     ? low.map((p) => item({
         icon: "✈", hex: p.hex, title: esc(planeTitle(p)),
-        sub: `${fmtInt(p.agl)} ft above you · ${fmtInt(p.gs)} kt`,
+        sub: p.landing ? `Landing at ${esc(p.landing.ident)} before reaching you`
+          : `${fmtInt(p.agl)} ft above you · ${fmtInt(p.gs)} kt`,
         side: `${p.dist_mi.toFixed(1)} mi`,
       })).join("")
     : empty("No low planes nearby.");
@@ -285,7 +308,7 @@ function renderDetail() {
   const card = $("#detail");
   const p = byHex(selectedHex);
   if (!p) {
-    trailLine.setLatLngs([]); futureLine.setLatLngs([]); cpaMarker.remove();
+    trailLine.setLatLngs([]); futureLine.setLatLngs([]); cpaMarker.remove(); airportMarker.remove();
     if (selectedFromAlert) {
       const a = state.alerts.find((x) => x.hex === selectedFromAlert.hex) || selectedFromAlert;
       if (state.trail?.hex === a.hex) trailLine.setLatLngs(state.trail.points.map((t) => [t[1], t[2]]));
@@ -302,10 +325,15 @@ function renderDetail() {
   const s = state.settings;
   const fav = state.favorites.find((f) => f.id === p.favorite);
   const pass = p.pass;
+  const land = p.landing;
+  const landNote = land ? `${esc(land.name)}, ${(land.dist_nm * 1.15078).toFixed(1)} mi ahead of it` : "";
   let passHtml;
   if (p.on_ground) passHtml = `<div class="pass"><strong>On the ground</strong>${p.dist_mi.toFixed(1)} mi from you</div>`;
   else if (p.candidate) passHtml = `<div class="pass overhead"><strong>Overhead in <span data-eta="${state.ts + pass.t}">${fmtClock(pass.t)}</span></strong>
-      About ${fmtInt(pass.agl)} ft above you, passing within ${pass.miss_mi.toFixed(2)} mi</div>`;
+      About ${fmtInt(pass.agl)} ft above you, passing within ${pass.miss_mi.toFixed(2)} mi
+      ${land ? `<br><small>Looks like it may land at ${esc(land.ident)} first (${landNote})</small>` : ""}</div>`;
+  else if (land) passHtml = `<div class="pass landing"><strong>Landing at ${esc(land.ident)} before it reaches you</strong>
+      ${landNote}. No alert for this one.</div>`;
   else if (pass && pass.t > 5) passHtml = `<div class="pass"><strong>Closest approach ${pass.miss_mi.toFixed(1)} mi</strong>
       in ${fmtClock(pass.t)} at about ${fmtInt(Math.max(0, pass.agl))} ft above you</div>`;
   else passHtml = `<div class="pass"><strong>Moving away from you</strong>${p.dist_mi.toFixed(1)} mi away now</div>`;
@@ -315,7 +343,8 @@ function renderDetail() {
   card.innerHTML = `
     <header>
       <div><h3>${esc(p.name)}</h3>
-        <div class="meta">${esc([p.reg !== p.name && p.reg, p.type, p.desc].filter(Boolean).join(" · ") || p.hex.toUpperCase())}</div></div>
+        <div class="type-name">${esc(p.type_name || (p.type ? `Type ${p.type}` : "Unknown aircraft type"))}</div>
+        <div class="meta">${esc([p.reg !== p.name && p.reg, p.type, p.operator].filter(Boolean).join(" · ") || p.hex.toUpperCase())}</div></div>
       <div class="actions">
         <button data-fav="${fav ? "remove" : "hex"}" class="${fav ? "on" : ""}" title="${fav ? "Remove from favorites" : "Favorite this aircraft"}" aria-label="Favorite">${fav ? "★" : "☆"}</button>
         <button data-follow class="${followSelected ? "on" : ""}" title="Keep map centered on this plane" aria-label="Follow">⌖</button>
@@ -332,6 +361,7 @@ function renderDetail() {
       <div><dt>Distance</dt><dd>${p.dist_mi.toFixed(1)} mi</dd></div>
       <div><dt>Squawk</dt><dd>${esc(p.squawk || "—")}</dd></div>
       <div><dt>ICAO</dt><dd>${esc(p.hex.toUpperCase())}</dd></div>
+      <div class="wide"><dt>Aircraft</dt><dd>${esc(p.type_name || "Unknown")}${p.type ? ` (${esc(p.type)})` : ""} · ${SHAPE_NAMES[p.shape] || "Aircraft"}</dd></div>
     </dl>
     ${p.flight && !flightFav ? `<button class="fav-flight" data-fav="flight">☆ Favorite flight ${esc(p.flight)} (any aircraft)</button>` : ""}
     <div class="links">
@@ -351,6 +381,11 @@ function drawPaths(p) {
   if (p.on_ground || p.track == null) { futureLine.setLatLngs([]); cpaMarker.remove(); return; }
   const ahead = Math.max(state.settings.lead_time_sec, (p.pass?.t || 0) + 60, 180);
   futureLine.setLatLngs([now, livePos(p, ahead)]);
+  if (p.landing) {
+    airportMarker.setLatLng([p.landing.lat, p.landing.lon]).bindTooltip(esc(`${p.landing.ident} · ${p.landing.name}`)).addTo(map);
+  } else {
+    airportMarker.remove();
+  }
   if (p.pass && p.pass.t > 5 && p.pass.miss_mi < 10) {
     cpaMarker.setLatLng([p.pass.lat, p.pass.lon]).addTo(map);
   } else {

@@ -1,6 +1,8 @@
 """OS integration: start at login, and an app launcher entry (Start Menu / applications menu).
 
-Windows: HKCU Run key + Start Menu shortcut.
+Windows: HKCU Run key (only when the user turns it on). No Start Menu shortcut yet:
+         making one needs PowerShell/COM, and hidden PowerShell got the app quarantined
+         by antivirus. A proper installer should add the shortcut instead.
 macOS:   LaunchAgent in ~/Library/LaunchAgents (drag the .app to Applications yourself).
 Linux:   XDG autostart entry + ~/.local/share/applications entry.
 """
@@ -8,7 +10,6 @@ Linux:   XDG autostart entry + ~/.local/share/applications entry.
 import logging
 import os
 import plistlib
-import subprocess
 import sys
 from pathlib import Path
 
@@ -92,21 +93,7 @@ def register_launcher():
     """Add the app to the Start Menu (Windows) or applications menu (Linux). Safe to repeat."""
     cmd = launch_command()
     try:
-        if sys.platform == "win32":
-            programs = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
-            lnk = programs / f"{APP_NAME}.lnk"
-            ps = (
-                "$s = (New-Object -ComObject WScript.Shell).CreateShortcut($env:PO_LNK);"
-                "$s.TargetPath = $env:PO_EXE; $s.Arguments = $env:PO_ARGS;"
-                "$s.WorkingDirectory = Split-Path $env:PO_EXE;"
-                "$s.IconLocation = $env:PO_ICON + ',0';"
-                "$s.Description = 'See planes passing over you'; $s.Save()"
-            )
-            env = {**os.environ, "PO_LNK": str(lnk), "PO_EXE": cmd[0],
-                   "PO_ARGS": _quote_cmd(cmd[1:]), "PO_ICON": str(resource("assets", "icon.ico"))}
-            subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
-                           env=env, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
-        elif sys.platform.startswith("linux"):
+        if sys.platform.startswith("linux"):
             LINUX_MENU.parent.mkdir(parents=True, exist_ok=True)
             LINUX_MENU.write_text(_desktop_entry(cmd, autostart=False))
     except Exception as e:

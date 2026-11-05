@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Plane Overhead</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map"></div>
+
+  <div id="pick-banner" class="banner" hidden>
+    Click the map where you are. <button id="pick-cancel" type="button">Cancel</button>
+  </div>
+
+  <aside id="sidebar">
+    <header class="app-header">
+      <h1><img src="icon.svg" alt="" width="22" height="22"> Plane Overhead</h1>
+      <div id="status" class="status"><span class="dot"></span><span id="status-text">Starting…</span></div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="watch" aria-selected="true">Watch</button>
+      <button role="tab" data-tab="favorites" aria-selected="false">Favorites</button>
+      <button role="tab" data-tab="alerts" aria-selected="false">Alerts</button>
+      <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+    </nav>
+
+    <section id="tab-watch" class="panel">
+      <div id="paused" class="note" hidden>
+        Alerts paused until <span id="paused-until"></span>. <button data-pause="0" type="button">Resume</button>
+      </div>
+      <h2>Coming overhead</h2>
+      <ul id="upcoming" class="list"></ul>
+      <h2>Favorites in range</h2>
+      <ul id="fav-live" class="list"></ul>
+      <h2>Other low planes nearby</h2>
+      <ul id="nearby" class="list"></ul>
+      <div class="pause-row">
+        Pause alerts:
+        <button data-pause="30" type="button">30 min</button>
+        <button data-pause="60" type="button">1 h</button>
+        <button data-pause="240" type="button">4 h</button>
+      </div>
+    </section>
+
+    <section id="tab-favorites" class="panel" hidden>
+      <h2>Your favorites</h2>
+      <ul id="favorites" class="list"></ul>
+      <h2>Add a favorite</h2>
+      <form id="fav-form" class="stack">
+        <label>Match by
+          <select name="kind">
+            <option value="reg">Tail number (e.g. N12345)</option>
+            <option value="flight">Flight number (e.g. UAL123)</option>
+            <option value="hex">ICAO hex (e.g. a1b2c3)</option>
+          </select>
+        </label>
+        <label>Value <input name="value" required autocomplete="off"></label>
+        <label>Label (optional) <input name="label" autocomplete="off"></label>
+        <button type="submit">Add favorite</button>
+        <p class="hint">Favorites within <span id="fav-radius-hint">30</span> mi are watched for takeoffs.</p>
+      </form>
+    </section>
+
+    <section id="tab-alerts" class="panel" hidden>
+      <h2>Recent alerts</h2>
+      <ul id="alerts" class="list"></ul>
+    </section>
+
+    <section id="tab-settings" class="panel" hidden>
+      <form id="settings" class="stack" autocomplete="off">
+        <fieldset>
+          <legend>Your location</legend>
+          <div class="row">
+            <label>Latitude <input name="latitude" type="number" step="any"></label>
+            <label>Longitude <input name="longitude" type="number" step="any"></label>
+          </div>
+          <label>Ground elevation (ft) <input name="elevation_ft" type="number" step="1"></label>
+          <button id="pick-location" type="button">Pick on map</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>Overhead alerts</legend>
+          <label class="check"><input name="notify_overhead" type="checkbox"> Alert me before planes pass overhead</label>
+          <label>Passing within <output data-for="pass_distance_mi"></output> mi
+            <input name="pass_distance_mi" type="range" min="0.25" max="5" step="0.25"></label>
+          <label>Lower than <output data-for="max_altitude_agl_ft"></output> ft above me
+            <input name="max_altitude_agl_ft" type="range" min="1000" max="20000" step="500"></label>
+          <label>Warn me <output data-for="lead_time_sec"></output> ahead
+            <input name="lead_time_sec" type="range" min="30" max="600" step="30"></label>
+          <label class="check"><input name="skip_landing" type="checkbox"> Skip planes that will land at an airport before reaching me</label>
+          <label class="check"><input name="sound" type="checkbox"> Play a sound</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Quiet hours</legend>
+          <label class="check"><input name="quiet_hours_enabled" type="checkbox"> No notifications during quiet hours</label>
+          <div class="row">
+            <label>From <input name="quiet_start" type="time"></label>
+            <label>To <input name="quiet_end" type="time"></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Favorites</legend>
+          <label>Watch within <output data-for="favorite_radius_mi"></output> mi
+            <input name="favorite_radius_mi" type="range" min="5" max="200" step="5"></label>
+          <label class="check"><input name="favorite_notify_takeoff" type="checkbox"> Alert when a favorite takes off</label>
+          <label class="check"><input name="favorite_notify_in_range" type="checkbox"> Alert when a favorite comes into range</label>
+        </fieldset>
+
+        <fieldset>
+          <legend>Data</legend>
+          <label>Check every <output data-for="poll_interval_sec"></output> s
+            <input name="poll_interval_sec" type="range" min="5" max="60" step="5"></label>
+        </fieldset>
+      </form>
+      <span id="saved" class="saved"></span>
+
+      <fieldset class="stack">
+        <legend>App</legend>
+        <label class="check"><input id="autostart" type="checkbox"> Start when I log in</label>
+        <button id="test-notification" type="button">Send a test notification</button>
+        <button id="quit" type="button" class="danger">Quit Plane Overhead</button>
+      </fieldset>
+    </section>
+  </aside>
+
+  <article id="detail" class="detail" hidden></article>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="app.js"></script>
+</body>
+</html>

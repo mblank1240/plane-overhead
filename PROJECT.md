@@ -64,15 +64,23 @@ Rules going forward:
 
 ### Now
 - [x] Write this file; back up to a public GitHub repo
-- [ ] Recreate the lost `web/index.html` and `web/style.css` (matching `app.js` IDs)
-- [ ] Remove the AV triggers listed above
-- [ ] Distinct marker shapes per aircraft type (airliner, widebody, regional/turboprop,
-      light prop, helicopter, military/fighter, glider, balloon/blimp, drone, ground vehicle)
-- [ ] Full aircraft type name in the side panel (e.g. "B738" → "Boeing 737-800")
-- [ ] Airport-landing check: if an airport lies on the plane's path, the plane is descending
-      toward it, and it would reach the airport before your location, skip the alert
-- [ ] `requirements.txt`, README with run instructions
+- [x] Recreate the lost `web/index.html`, `web/style.css`, `web/icon.svg`; regenerate `assets/`
+- [x] Remove the AV triggers listed above (no PowerShell; autostart opt-in; no Start Menu
+      shortcut on Windows until there is a real installer)
+- [x] Distinct marker shapes per aircraft type: jet, heavy, bizjet, turboprop, light, heli,
+      fighter, glider, balloon, drone, ground (`datasets.classify`, `SHAPES` in `app.js`)
+- [x] Full aircraft type name in the side panel and notification body
+      (`datasets.AircraftTypes`, downloaded from tar1090-db and cached)
+- [x] Airport-landing check (`Tracker.landing_before_pass`): an airport within 1.5 nm of the
+      projected track, reached before your location, with the plane not climbing and under a
+      generous glidepath, and either (a) descending to near field elevation on arrival,
+      (b) within 10 nm, on/under a 3-degree glidepath and lined up (+/-15 deg) with a runway, or
+      (c) within 3 nm at pattern height (airports with no runway data). Toggle: Settings >
+      "Skip planes that will land...". Skipped alerts are logged.
+- [x] `requirements.txt`, README
 
-### Later
-- [ ] Packaging per OS (signed builds) once AV-safe
-- [ ] Regenerate `assets/` icons via `make_icon.py`
+### Next
+- [ ] Run the app on Windows from source and confirm Defender/SentinelOne leave it alone
+- [ ] Windows Start Menu entry via a signed installer (not PowerShell)
+- [ ] Packaging per OS (signed builds), one-dir PyInstaller at most
+- [ ] Tune landing thresholds with real-world observation (see "Skipped alert" log lines)

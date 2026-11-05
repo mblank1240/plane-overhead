@@ -19,6 +19,31 @@ FORGET_AFTER_SEC = 3600  # drop planes (and their trails) not seen for an hour
 REVISIT_SEC = 600        # a plane unseen this long counts as newly appeared
 TAKEOFF_MAX_AGL_FT = 2500
 
+# Landing check: an airport counts as "in the path" if the projected track passes within
+# this many nm of it, and the plane is "landing" there if it is descending and would be
+# near the ground by the time it arrives.
+APPROACH_CORRIDOR_NM = 1.5
+APPROACH_MAX_NM = 30
+LANDING_MAX_ARRIVAL_AGL_FT = 1000   # projected height over the field on arrival
+LANDING_MIN_DESCENT_FPM = 200
+LANDING_MAX_CLIMB_FPM = 500         # climbing faster than this = taking off / going around
+GLIDEPATH_FT_PER_NM = 350           # a 3-degree glideslope is ~320 ft per nm
+GLIDEPATH_MARGIN_FT = 1500          # room for level segments and traffic patterns
+RUNWAY_ALIGN_DEG = 15
+ALIGNED_MAX_NM = 10                 # runway alignment only counts this close in...
+ALIGNED_FT_PER_NM = 320             # ...and on or under a 3-degree glidepath
+ALIGNED_MARGIN_FT = 800
+ALIGNED_MAX_CLIMB_FPM = 300
+PATTERN_NM = 3                      # close-in, for airports with no runway headings
+PATTERN_MAX_AGL_FT = 1500
+
+# Map shape from the ADS-B emitter category, used when the type code is unknown.
+CATEGORY_SHAPES = {
+    "A1": "light", "A2": "bizjet", "A3": "jet", "A4": "jet", "A5": "heavy", "A6": "fighter",
+    "A7": "heli", "B1": "glider", "B2": "balloon", "B3": "glider", "B4": "light", "B6": "drone",
+    "C1": "ground", "C2": "ground", "C3": "ground",
+}
+
 DEFAULT_SETTINGS = {
     "latitude": None,
     "longitude": None,
@@ -35,6 +60,7 @@ DEFAULT_SETTINGS = {
     "favorite_radius_mi": 30,
     "favorite_notify_takeoff": True,
     "favorite_notify_in_range": False,
+    "skip_landing": True,
 }
 
 log = logging.getLogger("tracker")
@@ -68,11 +94,16 @@ def parse_hhmm(s):
 
 
 class Tracker:
-    def __init__(self, data_dir, on_alert=None):
-        """on_alert(alert, sound) is called for each alert that should notify the user."""
+    def __init__(self, data_dir, on_alert=None, datasets=None):
+        """on_alert(alert, sound) is called for each alert that should notify the user.
+
+        datasets (datasets.Datasets) supplies aircraft type names and airports; without
+        it, names fall back to type codes and no alerts are suppressed for landings.
+        """
         data_dir = Path(data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)
         self.on_alert = on_alert
+        self.datasets = datasets
         self.settings_store = JsonStore(data_dir / "settings.json", {})
         self.favorites_store = JsonStore(data_dir / "favorites.json", [])
         self.alerts_store = JsonStore(data_dir / "alerts.json", [])
@@ -215,6 +246,12 @@ class Tracker:
         rate = ac.get("geom_rate") or ac.get("baro_rate") or 0
         age = ac.get("seen_pos") or 0
         fav = self.favorite_for(ac)
+        type_code = (ac.get("t") or "").upper()
+        info = self.datasets.types.get(type_code) if self.datasets else None
+        category = ac.get("category") or ""
+        shape = (info or {}).get("shape") or CATEGORY_SHAPES.get(category) or "jet"
+        if on_ground and category.startswith("C"):
+            shape = "ground"
 
         p = {
             "hex": ac["hex"],
@@ -222,7 +259,10 @@ class Tracker:
             "reg": ac.get("r") or "",
             "type": ac.get("t") or "",
             "desc": ac.get("desc") or "",
-            "category": ac.get("category") or "",
+            "type_name": (info or {}).get("name") or (ac.get("desc") or "").title(),
+            "shape": shape,
+            "operator": ac.get("ownOp") or "",
+            "category": category,
             "squawk": ac.get("squawk") or "",
             "lat": ac["lat"],
             "lon": ac["lon"],
@@ -236,6 +276,7 @@ class Tracker:
             "dist_mi": math.hypot(x, y) * MI_PER_NM,
             "favorite": fav["id"] if fav else None,
             "pass": None,
+            "landing": None,
             "candidate": False,
         }
         p["name"] = p["flight"] or p["reg"] or p["hex"].upper()
@@ -261,7 +302,54 @@ class Tracker:
             and p["pass"]["miss_mi"] <= s["pass_distance_mi"]
             and 0 < agl_at_pass <= s["max_altitude_agl_ft"]
         )
+        if p["candidate"]:
+            p["landing"] = self.landing_before_pass(x, y, vx, vy, track, alt, rate, t_cpa, s)
+            if p["landing"] and s["skip_landing"]:
+                p["candidate"] = False
         return p
+
+    def landing_before_pass(self, x, y, vx, vy, track, alt, rate, t_cpa, s):
+        """The airport this plane is landing at before it reaches you, or None.
+
+        Candidates are airports on the projected track (within APPROACH_CORRIDOR_NM)
+        that the plane reaches before its closest approach to you, with the plane low
+        enough to be on approach (under a generous glidepath) and not climbing. It
+        counts as landing there if any of these hold:
+          - it is descending and would be near the field when it gets there
+          - it is close in, on or under a 3-degree glidepath, and lined up with a runway
+          - it is within a few miles at traffic-pattern height (airports with no runway data)
+        """
+        if not self.datasets or rate > LANDING_MAX_CLIMB_FPM:
+            return None
+        speed = math.hypot(vx, vy)
+        ux, uy = vx / speed, vy / speed
+        along_you = t_cpa * speed
+        radius = self.search_radius_nm(s) + APPROACH_MAX_NM  # fixed per settings, so it caches
+        axis = track % 180
+        best = None
+        for a in self.datasets.airports.near(s["latitude"], s["longitude"], radius):
+            rx, ry = a["x"] - x, a["y"] - y
+            along = rx * ux + ry * uy
+            if not (0 < along < along_you and along <= APPROACH_MAX_NM):
+                continue
+            if abs(rx * uy - ry * ux) > APPROACH_CORRIDOR_NM:
+                continue
+            height = alt - a["elev"]
+            if not (-300 < height <= GLIDEPATH_FT_PER_NM * along + GLIDEPATH_MARGIN_FT):
+                continue
+            t_arrive = along / speed
+            descending = (rate <= -LANDING_MIN_DESCENT_FPM
+                          and height + rate * t_arrive / 60.0 <= LANDING_MAX_ARRIVAL_AGL_FT)
+            aligned = (along <= ALIGNED_MAX_NM and rate <= ALIGNED_MAX_CLIMB_FPM
+                       and height <= ALIGNED_FT_PER_NM * along + ALIGNED_MARGIN_FT
+                       and any(min(abs(axis - r), 180 - abs(axis - r)) <= RUNWAY_ALIGN_DEG
+                               for r in a["runways"]))
+            pattern = not a["runways"] and along <= PATTERN_NM and height <= PATTERN_MAX_AGL_FT
+            if (descending or aligned or pattern) and (best is None or along < best["dist_nm"]):
+                best = {"ident": a["ident"], "name": a["name"], "lat": a["lat"], "lon": a["lon"],
+                        "dist_nm": round(along, 1), "t": t_arrive,
+                        "why": "descending" if descending else "aligned" if aligned else "pattern"}
+        return best
 
     # ---- alerts ----------------------------------------------------------------
 
@@ -269,9 +357,13 @@ class Tracker:
         prev = self.seen.get(p["hex"])
         recently_seen = prev is not None and now - prev["t"] < REVISIT_SEC
 
-        if (p["candidate"] and s["notify_overhead"]
-                and p["pass"]["t"] <= s["lead_time_sec"] + s["poll_interval_sec"] / 2):
+        due = p["pass"] and p["pass"]["t"] <= s["lead_time_sec"] + s["poll_interval_sec"] / 2
+        if p["candidate"] and s["notify_overhead"] and due:
             self.raise_alert("overhead", p, s, now, cooldown=900)
+        elif p["landing"] and due and ("landing", p["hex"]) not in self.notified:
+            self.notified[("landing", p["hex"])] = now
+            log.info("Skipped alert: %s is landing at %s, %.1f nm ahead of it, before reaching you",
+                     p["name"], p["landing"]["ident"], p["landing"]["dist_nm"])
 
         if not p["favorite"]:
             return
@@ -365,9 +457,10 @@ def describe(kind, p):
     if kind == "overhead":
         eta = int(round(p["pass"]["t"]))
         trend = " and climbing" if p["rate"] > 300 else " and descending" if p["rate"] < -300 else ""
+        what = f"{p['type_name']}, " if p["type_name"] else ""
         return (
             f"✈ {name} overhead in {eta // 60}:{eta % 60:02d}",
-            f"{int(p['pass']['agl']):,} ft above you{trend}, passing within "
+            f"{what}{int(p['pass']['agl']):,} ft above you{trend}, passing within "
             f"{p['pass']['miss_mi']:.1f} mi. Now {p['dist_mi']:.0f} mi away at {int(p['gs'])} kt.",
         )
     if kind == "takeoff":
