@@ -32,6 +32,7 @@ let followSelected = false;
 let picking = false;
 let settingsLoaded = false;
 let centeredOnce = false;
+let namingHex = null;     // aircraft whose "name this aircraft" form is open
 let pendingPan = false;   // a #plane= link arrived before the first data load
 const markers = new Map(); // hex -> { marker, key }
 
@@ -322,6 +323,8 @@ function renderDetail() {
     }
     return;
   }
+  // Don't wipe the naming form while you're typing in it; just keep the map paths moving.
+  if (namingHex === p.hex && card.querySelector("#name-form")) { drawPaths(p); return; }
   const s = state.settings;
   const fav = state.favorites.find((f) => f.id === p.favorite);
   const pass = p.pass;
@@ -363,16 +366,60 @@ function renderDetail() {
       <div><dt>ICAO</dt><dd>${esc(p.hex.toUpperCase())}</dd></div>
       <div class="wide"><dt>Aircraft</dt><dd>${esc(p.type_name || "Unknown")}${p.type ? ` (${esc(p.type)})` : ""} · ${SHAPE_NAMES[p.shape] || "Aircraft"}</dd></div>
     </dl>
+    ${namingHtml(p)}
     ${p.flight && !flightFav ? `<button class="fav-flight" data-fav="flight">☆ Favorite flight ${esc(p.flight)} (any aircraft)</button>` : ""}
     <div class="links">
       <a href="https://globe.adsb.lol/?icao=${esc(p.hex)}" target="_blank">adsb.lol</a>
       ${p.flight ? `<a href="https://www.flightaware.com/live/flight/${esc(p.flight)}" target="_blank">FlightAware</a>` : ""}
+      ${p.reg ? `<a href="https://www.flightradar24.com/data/aircraft/${esc(p.reg.toLowerCase())}" target="_blank">Flightradar24</a>` : ""}
       ${p.reg ? `<a href="https://www.jetphotos.com/registration/${esc(p.reg)}" target="_blank">Photos</a>` : ""}
     </div>`;
   card.hidden = false;
   card.dataset.hex = p.hex;
   drawPaths(p);
 }
+
+function namingHtml(p) {
+  const savedTo = p.reg ? `tail number ${esc(p.reg)}` : `ICAO ${esc(p.hex.toUpperCase())} (this aircraft sends no tail number)`;
+  if (namingHex === p.hex) {
+    const c = p.custom_type || {};
+    const shapes = Object.entries(SHAPE_NAMES)
+      .map(([k, v]) => `<option value="${k}" ${c.shape === k ? "selected" : ""}>${v}</option>`).join("");
+    return `<form id="name-form" class="name-form stack" data-hex="${esc(p.hex)}" data-reg="${esc(p.reg)}">
+      <label>Aircraft name <input name="name" value="${esc(c.name || "")}" placeholder="e.g. Cessna 208B Grand Caravan" maxlength="80"></label>
+      <div class="row">
+        <label>ICAO type code <input name="type" value="${esc(c.type || "")}" placeholder="e.g. C208" maxlength="6"></label>
+        <label>Map shape <select name="shape"><option value="">Automatic</option>${shapes}</select></label>
+      </div>
+      <p class="hint">Saved to ${savedTo}. A known type code also sets the name and shape for you.</p>
+      <p class="hint error" hidden></p>
+      <div class="row"><button type="submit">Save</button><button type="button" data-name-cancel>Cancel</button></div>
+    </form>`;
+  }
+  if (p.custom_type) {
+    return `<div class="named">Named by you, saved to ${savedTo}.
+      <button type="button" data-name-aircraft>Edit</button> <button type="button" data-unname>Remove</button></div>`;
+  }
+  if (!p.type_name) return `<button type="button" class="fav-flight" data-name-aircraft>✎ Name this aircraft</button>`;
+  return "";
+}
+
+document.addEventListener("submit", async (e) => {
+  if (e.target.id !== "name-form") return;
+  e.preventDefault();
+  const f = e.target;
+  const data = Object.fromEntries(new FormData(f));
+  try {
+    await api("/api/aircraft-name", { ...data, hex: f.dataset.hex, reg: f.dataset.reg });
+    namingHex = null;
+    setTimeout(refresh, 1500);  // the tracker re-polls with the new name
+    refresh();
+  } catch (err) {
+    const msg = f.querySelector(".error");
+    msg.textContent = err.message;
+    msg.hidden = false;
+  }
+});
 
 function drawPaths(p) {
   const now = livePos(p);
@@ -396,6 +443,7 @@ function drawPaths(p) {
 // ---------- selection ----------
 
 function select(hex, pan = true) {
+  if (hex !== selectedHex) namingHex = null;
   selectedHex = hex;
   selectedFromAlert = null;
   followSelected = false;
@@ -417,8 +465,21 @@ function selectFromHash() {
 }
 
 document.addEventListener("click", async (e) => {
-  const t = e.target.closest("[data-remove],[data-fav],[data-close],[data-follow],li.item[data-hex],[role=tab]");
+  const t = e.target.closest("[data-remove],[data-fav],[data-close],[data-follow],[data-name-aircraft],[data-name-cancel],[data-unname],li.item[data-hex],[role=tab]");
   if (!t) return;
+  if (t.hasAttribute("data-name-aircraft")) {
+    namingHex = selectedHex;
+    renderDetail();
+    $("#name-form input[name=name]")?.focus();
+    return;
+  }
+  if (t.hasAttribute("data-name-cancel")) { namingHex = null; return renderDetail(); }
+  if (t.hasAttribute("data-unname")) {
+    const p = byHex(selectedHex);
+    if (p) await api("/api/aircraft-name/remove", { hex: p.hex, reg: p.reg });
+    setTimeout(refresh, 1500);
+    return refresh();
+  }
   if (t.dataset.remove) {
     e.stopPropagation();
     await api("/api/favorites/remove", { id: t.dataset.remove });

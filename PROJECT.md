@@ -78,6 +78,11 @@ Rules going forward:
       (c) within 3 nm at pattern height (airports with no runway data). Toggle: Settings >
       "Skip planes that will land...". Skipped alerts are logged.
 - [x] `requirements.txt`, README
+- [x] Name unknown aircraft yourself: side panel "Name this aircraft" (name, optional ICAO
+      type code, optional shape), saved by tail number in `custom_types.json` in the data dir
+      (`hex:<icao>` when no tail number). US N-number callsigns count as the tail number
+      when adsb.lol sends no registration.
+- [x] Rebuilt `.venv` on Windows (old one moved to `.venv-broken`); app verified running
 
 ### Next
 - [ ] Run the app on Windows from source and confirm Defender/SentinelOne leave it alone

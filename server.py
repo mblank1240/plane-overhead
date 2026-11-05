@@ -80,6 +80,11 @@ class Handler(SimpleHTTPRequestHandler):
             if path == "/api/favorites/remove":
                 tracker.remove_favorite(data.get("id"))
                 return self.send_json({"ok": True})
+            if path == "/api/aircraft-name":
+                return self.send_json(tracker.set_custom_type(data))
+            if path == "/api/aircraft-name/remove":
+                tracker.remove_custom_type(data)
+                return self.send_json({"ok": True})
             if path == "/api/pause":
                 tracker.pause(float(data.get("minutes") or 0))
                 self.app.refresh_tray()

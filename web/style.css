@@ -157,6 +157,11 @@ output { font-weight: 600; }
 .detail dd { margin: 0; font-variant-numeric: tabular-nums; }
 .detail dl .wide { grid-column: 1 / -1; }
 .detail .fav-flight { width: 100%; margin-top: 12px; }
+.detail .name-form { margin-top: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.detail .name-form .row > button { flex: 1; }
+.detail .hint.error { color: var(--alert); }
+.detail .named { margin-top: 12px; font-size: 12px; color: var(--muted); }
+.detail .named button { padding: 1px 8px; font-size: 12px; margin-left: 4px; }
 .detail .links { display: flex; gap: 12px; margin-top: 12px; font-size: 13px; }
 .detail .links a { color: var(--accent); }
 

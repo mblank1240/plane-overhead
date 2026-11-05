@@ -3,6 +3,7 @@
 import json
 import logging
 import math
+import re
 import threading
 import time
 import urllib.request
@@ -36,6 +37,9 @@ ALIGNED_MARGIN_FT = 800
 ALIGNED_MAX_CLIMB_FPM = 300
 PATTERN_NM = 3                      # close-in, for airports with no runway headings
 PATTERN_MAX_AGL_FT = 1500
+
+SHAPES = {"jet", "heavy", "bizjet", "turboprop", "light", "heli", "fighter", "glider",
+          "balloon", "drone", "ground"}
 
 # Map shape from the ADS-B emitter category, used when the type code is unknown.
 CATEGORY_SHAPES = {
@@ -84,6 +88,18 @@ class JsonStore:
         tmp.replace(self.path)
 
 
+US_TAIL = re.compile(r"N[1-9][0-9A-Z]{0,4}")
+
+
+def registration(ac):
+    """The tail number, or the callsign when it is a US tail number and no registration came."""
+    reg = (ac.get("r") or "").strip()
+    if reg:
+        return reg
+    callsign = (ac.get("flight") or "").strip().upper()
+    return callsign if US_TAIL.fullmatch(callsign) else ""
+
+
 def norm(s):
     return (s or "").strip().upper().replace("-", "")
 
@@ -106,6 +122,9 @@ class Tracker:
         self.datasets = datasets
         self.settings_store = JsonStore(data_dir / "settings.json", {})
         self.favorites_store = JsonStore(data_dir / "favorites.json", [])
+        # Names you gave aircraft the type database doesn't know, keyed by tail number
+        # (or "hex:<icao>" for aircraft that broadcast no registration).
+        self.custom_types_store = JsonStore(data_dir / "custom_types.json", {})
         self.alerts_store = JsonStore(data_dir / "alerts.json", [])
         self.lock = threading.RLock()
         self.wake = threading.Event()
@@ -163,8 +182,46 @@ class Tracker:
             self.favorites_store.value = [f for f in self.favorites if f["id"] != fav_id]
             self.favorites_store.save()
 
+    # ---- names you gave aircraft ------------------------------------------------
+
+    @staticmethod
+    def custom_key(reg, hex_):
+        reg = norm(reg)
+        return reg if reg else f"hex:{(hex_ or '').strip().lower()}"
+
+    def custom_type_for(self, ac):
+        store = self.custom_types_store.value
+        reg = norm(registration(ac))
+        return (store.get(reg) if reg else None) or store.get(f"hex:{ac.get('hex', '')}")
+
+    def set_custom_type(self, data):
+        name = (data.get("name") or "").strip()[:80]
+        code = norm(data.get("type"))[:6]
+        shape = data.get("shape") or ""
+        if not (data.get("reg") or data.get("hex")):
+            raise ValueError("Need the aircraft's tail number or ICAO hex")
+        if not name and not code:
+            raise ValueError("Enter a name or an ICAO type code")
+        if shape and shape not in SHAPES:
+            raise ValueError(f"Unknown shape {shape!r}")
+        key = self.custom_key(data.get("reg"), data.get("hex"))
+        entry = {"name": name, "type": code, "shape": shape,
+                 "reg": norm(data.get("reg")), "hex": (data.get("hex") or "").lower(), "added": time.time()}
+        with self.lock:
+            self.custom_types_store.value[key] = entry
+            self.custom_types_store.save()
+        self.wake.set()  # re-poll so the new name shows right away
+        return entry
+
+    def remove_custom_type(self, data):
+        key = self.custom_key(data.get("reg"), data.get("hex"))
+        with self.lock:
+            self.custom_types_store.value.pop(key, None)
+            self.custom_types_store.save()
+        self.wake.set()
+
     def favorite_for(self, ac):
-        hex_, reg, flight = ac.get("hex", ""), norm(ac.get("r")), norm(ac.get("flight"))
+        hex_, reg, flight = ac.get("hex", ""), norm(registration(ac)), norm(ac.get("flight"))
         for f in self.favorites:
             if ((f["kind"] == "hex" and f["value"] == hex_)
                     or (f["kind"] == "reg" and reg and f["value"] == reg)
@@ -246,20 +303,24 @@ class Tracker:
         rate = ac.get("geom_rate") or ac.get("baro_rate") or 0
         age = ac.get("seen_pos") or 0
         fav = self.favorite_for(ac)
-        type_code = (ac.get("t") or "").upper()
+        custom = self.custom_type_for(ac)
+        type_code = (ac.get("t") or (custom or {}).get("type") or "").upper()
         info = self.datasets.types.get(type_code) if self.datasets else None
         category = ac.get("category") or ""
-        shape = (info or {}).get("shape") or CATEGORY_SHAPES.get(category) or "jet"
+        shape = ((custom or {}).get("shape") or (info or {}).get("shape")
+                 or CATEGORY_SHAPES.get(category) or "jet")
         if on_ground and category.startswith("C"):
             shape = "ground"
 
         p = {
             "hex": ac["hex"],
             "flight": (ac.get("flight") or "").strip(),
-            "reg": ac.get("r") or "",
-            "type": ac.get("t") or "",
+            "reg": registration(ac),
+            "type": type_code,
             "desc": ac.get("desc") or "",
-            "type_name": (info or {}).get("name") or (ac.get("desc") or "").title(),
+            "type_name": ((custom or {}).get("name") or (info or {}).get("name")
+                          or (ac.get("desc") or "").title()),
+            "custom_type": custom,
             "shape": shape,
             "operator": ac.get("ownOp") or "",
             "category": category,
