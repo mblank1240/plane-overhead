@@ -40,6 +40,7 @@ jobs:
 
       - name: Smoke test (start the built app, check it answers, quit it)
         shell: bash
+        timeout-minutes: 3
         run: |
           case "$RUNNER_OS" in
             Windows) app="dist/PlaneOverhead/PlaneOverhead.exe" ;;
@@ -47,15 +48,18 @@ jobs:
             *)       app="dist/PlaneOverhead/PlaneOverhead" ;;
           esac
           "$app" --background &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
           for i in $(seq 60); do
-            curl -sf http://127.0.0.1:8737/api/ping && break
+            curl -sf -m 5 http://127.0.0.1:8737/api/ping && break
             sleep 1
           done
-          curl -sf http://127.0.0.1:8737/api/state | python -c "import json,sys; s=json.load(sys.stdin); print('state ok,', len(s['settings']), 'settings')"
-          curl -sf http://127.0.0.1:8737/ | grep -q "Plane Overhead"
-          curl -sf -X POST -H "Content-Type: application/json" -H "X-Plane-Overhead: 1" -d '{}' http://127.0.0.1:8737/api/quit
-          sleep 3
-          if curl -sf http://127.0.0.1:8737/api/ping; then echo "app did not quit"; exit 1; fi
+          curl -sf -m 20 http://127.0.0.1:8737/api/state | python -c "import json,sys; s=json.load(sys.stdin); print('state ok,', len(s['settings']), 'settings')"
+          curl -sf -m 10 http://127.0.0.1:8737/ | grep -q "Plane Overhead"
+          curl -sf -m 10 -X POST -H "Content-Type: application/json" -H "X-Plane-Overhead: 1" -d '{}' http://127.0.0.1:8737/api/quit
+          for i in $(seq 10); do kill -0 $pid 2>/dev/null || break; sleep 1; done
+          if kill -0 $pid 2>/dev/null; then echo "app did not exit after Quit"; exit 1; fi
+          echo "app exited cleanly"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'

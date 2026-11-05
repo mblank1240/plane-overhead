@@ -12,6 +12,7 @@ tray icon and the webview to each own one).
 
 import json
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -151,6 +152,9 @@ class App:
         if self.tray:
             self.tray.stop()
         threading.Thread(target=self.server.shutdown, daemon=True).start()
+        # Stopping the menu-bar icon from a non-main thread doesn't always end its event
+        # loop on macOS; make sure Quit really quits.
+        threading.Timer(3, lambda: os._exit(0)).start()
 
     # ---- main loop ----
 
