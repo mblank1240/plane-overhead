@@ -50,10 +50,12 @@ class App:
     def __init__(self):
         from datasets import Datasets
         from notify import Notifier
+        from routes import Routes
         from tracker import Tracker
 
         self.notifier = Notifier(fallback=self.tray_notification)
         self.datasets = Datasets(data_dir())
+        self.routes = Routes()
         self.tracker = Tracker(data_dir(), on_alert=self.notify_alert, datasets=self.datasets)
         self.window_proc = None
         self.commands = []        # [{"id", "hex"}] for the open window

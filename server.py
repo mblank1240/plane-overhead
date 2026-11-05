@@ -59,6 +59,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"app": "plane-overhead"})
         if url.path == "/api/state":
             return self.send_json(self.app.state(query.get("trail", [None])[0]))
+        if url.path == "/api/route":
+            try:
+                return self.send_json(self.app.routes.lookup(
+                    query.get("callsign", [""])[0], query.get("lat", ["0"])[0], query.get("lon", ["0"])[0]))
+            except ValueError as e:
+                return self.send_json({"error": str(e)}, 400)
         if url.path == "/api/window/poll":
             after = int(query.get("after", ["-1"])[0])
             latest, commands = self.app.window_commands(after)

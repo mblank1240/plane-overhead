@@ -147,6 +147,16 @@ output { font-weight: 600; }
 .detail .actions button { padding: 2px 8px; font-size: 16px; }
 .detail .actions button.on { color: var(--fav); border-color: var(--fav); }
 .detail .actions button[data-follow].on { color: var(--accent); border-color: var(--accent); }
+.detail .route { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.detail .route.muted { color: var(--muted); font-size: 13px; }
+.detail .route .leg { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.detail .route .leg:last-child { text-align: right; }
+.detail .route small { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+.detail .route .code { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.detail .route .city { font-weight: 600; }
+.detail .route .ap-name { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.detail .route .arrow { font-size: 20px; color: var(--muted); flex: none; }
+.detail .route-note { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .detail .pass { margin: 12px 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); font-size: 13px; }
 .detail .pass strong { display: block; font-size: 15px; margin-bottom: 2px; }
 .detail .pass.overhead { background: color-mix(in srgb, var(--alert) 14%, transparent); }

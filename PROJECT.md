@@ -82,9 +82,13 @@ Rules going forward:
       type code, optional shape), saved by tail number in `custom_types.json` in the data dir
       (`hex:<icao>` when no tail number). US N-number callsigns count as the tail number
       when adsb.lol sends no registration.
+- [x] Route (From / To) above the closest-approach box in the side panel (`routes.py`,
+      adsb.im routeset by callsign, cached 6 h). It's the published route for the flight
+      number, not a filed flight plan; "plausible" = the plane's position fits the route.
 - [x] Rebuilt `.venv` on Windows (old one moved to `.venv-broken`); app verified running
 
 ### Next
+- [ ] Draw the route (origin -> destination) on the map for the selected flight
 - [ ] Run the app on Windows from source and confirm Defender/SentinelOne leave it alone
 - [ ] Windows Start Menu entry via a signed installer (not PowerShell)
 - [ ] Packaging per OS (signed builds), one-dir PyInstaller at most

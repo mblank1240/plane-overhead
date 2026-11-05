@@ -32,7 +32,8 @@ let followSelected = false;
 let picking = false;
 let settingsLoaded = false;
 let centeredOnce = false;
-let namingHex = null;     // aircraft whose "name this aircraft" form is open
+let namingHex = null;
+const routes = new Map();  // callsign -> route from /api/route, or "loading"     // aircraft whose "name this aircraft" form is open
 let pendingPan = false;   // a #plane= link arrived before the first data load
 const markers = new Map(); // hex -> { marker, key }
 
@@ -354,6 +355,7 @@ function renderDetail() {
         <button data-close title="Close" aria-label="Close">×</button>
       </div>
     </header>
+    ${routeHtml(p)}
     ${passHtml}
     <dl>
       <div><dt>Altitude</dt><dd>${p.on_ground ? "Ground" : fmtInt(p.alt) + " ft"}</dd></div>
@@ -377,6 +379,40 @@ function renderDetail() {
   card.hidden = false;
   card.dataset.hex = p.hex;
   drawPaths(p);
+}
+
+function routeHtml(p) {
+  if (!p.flight) return "";
+  const r = routes.get(p.flight);
+  if (r === undefined) {
+    routes.set(p.flight, "loading");
+    api(`/api/route?callsign=${encodeURIComponent(p.flight)}&lat=${p.lat}&lon=${p.lon}`)
+      .then((res) => routes.set(p.flight, res))
+      .catch(() => routes.set(p.flight, { found: false, error: "Route lookup failed" }))
+      .finally(() => { if (byHex(selectedHex)?.flight === p.flight) renderDetail(); });
+  }
+  if (r === undefined || r === "loading") return `<div class="route muted">Looking up route…</div>`;
+  if (!r.found) {
+    return `<div class="route muted">${esc(r.error || (p.reg && p.flight.toUpperCase() === p.reg.toUpperCase()
+      ? "Private flight, no published route" : "No route on file for this flight"))}</div>`;
+  }
+  const a = r.airports;
+  const leg = (ap, label) => `<div class="leg" title="${esc(ap.name)}">
+      <small>${label}</small>
+      <span class="code">${esc(ap.iata || ap.icao)}</span>
+      <span class="city">${esc(ap.city || ap.name)}</span>
+      <span class="ap-name">${esc(ap.name)}</span></div>`;
+  const stops = a.slice(1, -1).map((x) => esc(x.iata || x.icao)).join(", ");
+  const to = a[a.length - 1];
+  let toGo = "";
+  if (r.plausible && to.lat != null) {
+    const dLat = ((to.lat - p.lat) * Math.PI) / 180, dLon = ((to.lon - p.lon) * Math.PI) / 180;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos((p.lat * Math.PI) / 180) * Math.cos((to.lat * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
+    toGo = `${fmtInt(3958.8 * 2 * Math.asin(Math.sqrt(h)))} mi to go`;
+  }
+  const notes = [stops && `Via ${stops}`, toGo, !r.plausible && "Published route for this flight number; today's flight may differ"].filter(Boolean);
+  return `<div class="route">${leg(a[0], "From")}<span class="arrow">→</span>${leg(to, "To")}</div>
+    ${notes.length ? `<div class="route-note">${notes.join(" · ")}</div>` : ""}`;
 }
 
 function namingHtml(p) {
