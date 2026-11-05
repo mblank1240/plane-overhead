@@ -11,9 +11,15 @@ import sys
 
 from PyInstaller.utils.hooks import collect_submodules
 
-hidden = collect_submodules("desktop_notifier") + collect_submodules("pystray")
+# pystray picks its backend at import time, and importing it on a headless Linux build
+# machine fails, so name the backends instead of collecting them.
+hidden = collect_submodules("desktop_notifier")
 if sys.platform == "win32":
-    hidden += collect_submodules("winrt")
+    hidden += ["pystray._win32"] + collect_submodules("winrt")
+elif sys.platform == "darwin":
+    hidden += ["pystray._darwin"]
+else:
+    hidden += ["pystray._xorg", "pystray._appindicator", "pystray._gtk"]
 
 a = Analysis(
     ["main.py"],

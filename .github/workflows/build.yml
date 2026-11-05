@@ -38,6 +38,25 @@ jobs:
       - name: Build
         run: pyinstaller --noconfirm plane-overhead.spec
 
+      - name: Smoke test (start the built app, check it answers, quit it)
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) app="dist/PlaneOverhead/PlaneOverhead.exe" ;;
+            macOS)   app="dist/Plane Overhead.app/Contents/MacOS/PlaneOverhead" ;;
+            *)       app="dist/PlaneOverhead/PlaneOverhead" ;;
+          esac
+          "$app" --background &
+          for i in $(seq 60); do
+            curl -sf http://127.0.0.1:8737/api/ping && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8737/api/state | python -c "import json,sys; s=json.load(sys.stdin); print('state ok,', len(s['settings']), 'settings')"
+          curl -sf http://127.0.0.1:8737/ | grep -q "Plane Overhead"
+          curl -sf -X POST -H "Content-Type: application/json" -H "X-Plane-Overhead: 1" -d '{}' http://127.0.0.1:8737/api/quit
+          sleep 3
+          if curl -sf http://127.0.0.1:8737/api/ping; then echo "app did not quit"; exit 1; fi
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
