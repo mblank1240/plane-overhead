@@ -6,8 +6,9 @@ notification, and sends it "focus this plane" commands while it's open.
 
 import json
 import logging
+import os
 import sys
-import time
+import threading
 import urllib.request
 import webbrowser
 
@@ -17,21 +18,21 @@ from server import BASE_URL
 log = logging.getLogger("window")
 
 
-def poll_commands(win):
+def poll_commands(win, closed):
     last = -1  # first poll just learns the latest id, so old commands aren't replayed
-    while True:
+    while not closed.is_set():
         try:
             with urllib.request.urlopen(f"{BASE_URL}api/window/poll?after={last}", timeout=5) as r:
                 reply = json.load(r)
         except OSError:
-            time.sleep(2)
+            closed.wait(2)
             continue
         last = reply["latest"]
         for cmd in reply["commands"]:
             bring_to_front(win)
             if cmd.get("hex"):
                 win.evaluate_js(f"window.openPlane && window.openPlane({json.dumps(cmd['hex'])})")
-        time.sleep(0.75)
+        closed.wait(0.75)
 
 
 def bring_to_front(win):
@@ -62,10 +63,16 @@ def run(url):
             pass
 
     win = webview.create_window(APP_NAME, url, width=1400, height=900, min_size=(760, 520))
+    closed = threading.Event()
+    win.events.closed += closed.set
     try:
-        # pywebview runs poll_commands on its own thread once the window is up.
-        webview.start(poll_commands, (win,), private_mode=False,
+        # pywebview runs poll_commands on its own (non-daemon) thread once the window is up.
+        webview.start(poll_commands, (win, closed), private_mode=False,
                       storage_path=str(data_dir() / "webview"))
     except Exception as e:
         log.warning("Webview failed (%s); opening in browser", e)
         webbrowser.open(url)
+    # The window is gone. Exit for real: if this process lingered, the background app
+    # would think the window was still open and never start a new one.
+    logging.shutdown()
+    os._exit(0)

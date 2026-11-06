@@ -48,7 +48,7 @@ if sys.platform == "darwin":
         icon="assets/icon.png",
         bundle_identifier="net.planeoverhead.app",
         info_plist={
-            "CFBundleShortVersionString": "2.1.0",
+            "CFBundleShortVersionString": "2.1.1",
             "LSUIElement": True,  # menu-bar app; the window process adds its own Dock icon
             "NSHighResolutionCapable": True,
         },
